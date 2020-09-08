@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveFunctor #-}
+
 module Main where
 
 import Control.Monad.IO.Class
@@ -6,11 +8,11 @@ import Control.Monad.Trans.State.Lazy (StateT, get, modify', runStateT)
 import qualified Data.Bifunctor as Bi
 import System.Random (Random (randomRIO))
 
-data Player = Human | AI deriving (Show)
+data Player = Human | AI deriving (Eq, Show)
 
-data SScore a b = SScore a b deriving (Show, Eq)
+data SScore a = SScore Player a deriving (Show, Eq, Functor)
 
-type Score = (SScore Player Integer, SScore Player Integer)
+type Score = (SScore Integer, SScore Integer)
 
 data Hand = Hand Integer
 
@@ -54,9 +56,9 @@ reportPlay (Hand handPlayer, Bet betPlayer) (Hand handAI, Bet betAI) = do
 
 updateScore :: Play -> Play -> StateT GameState IO ()
 updateScore (Hand handP, Bet betP) (Hand handAI, Bet betAI) = do
-  let addPoint bet (SScore _ val) = val + (if bet == (handAI + handP) then 1 else 0)
-  let _updatedScore = Bi.first $ Bi.bimap (addPoint betP) (addPoint betAI)
-  modify' _updatedScore
+  let addPoint bet = fmap $ (+) (if bet == (handAI + handP) then 1 else 0)
+  let _updateScore = Bi.first $ Bi.bimap (addPoint betP) (addPoint betAI)
+  modify' _updateScore
 
 runRound :: StateT GameState IO ()
 runRound = do
@@ -85,7 +87,7 @@ reportGame player = do
           AI -> "Computer"
   let winner = playerToText player
   (score, _) <- get
-  liftIO $ putStrLn $ "The winner was " ++ winner ++ "with score: " ++ (show score)
+  liftIO $ putStrLn $ "The winner was " ++ winner ++ " with score: " ++ (show score)
 
 app :: StateT GameState IO ()
 app = do
