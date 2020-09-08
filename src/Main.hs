@@ -6,11 +6,17 @@ import Control.Monad.Trans.State.Lazy (StateT, get, modify', runStateT)
 import qualified Data.Bifunctor as Bi
 import System.Random (Random (randomRIO))
 
-data Player = Human | AI
+data Player = Human | AI deriving (Show)
 
-type Score = (Integer, Integer)
+data SScore a b = SScore a b deriving (Show, Eq)
 
-type Play = (Integer, Integer)
+type Score = (SScore Player Integer, SScore Player Integer)
+
+data Hand = Hand Integer
+
+data Bet = Bet Integer
+
+type Play = (Hand, Bet)
 
 type GameState = (Score, IO Play)
 
@@ -18,7 +24,7 @@ aiPlay :: IO Play
 aiPlay = do
   hand <- randomRIO (0, 5)
   bet <- randomRIO (0, 10)
-  return (hand, bet)
+  return (Hand hand, Bet bet)
 
 playerPlay :: IO Play
 playerPlay = do
@@ -26,13 +32,13 @@ playerPlay = do
   playerHand <- liftIO getUserInput
   putStrLn "Choose expected score"
   playerBet <- liftIO getUserInput
-  return (playerHand, playerBet)
+  return (Hand playerHand, Bet playerBet)
   where
     getUserInput = fmap parseInput getLine
     parseInput a = read a :: Integer
 
 reportPlay :: Play -> Play -> StateT GameState IO ()
-reportPlay (handPlayer, betPlayer) (handAI, betAI) = do
+reportPlay (Hand handPlayer, Bet betPlayer) (Hand handAI, Bet betAI) = do
   let print = liftIO . putStrLn
   let hr = print "+++++++++"
   hr
@@ -47,10 +53,10 @@ reportPlay (handPlayer, betPlayer) (handAI, betAI) = do
   print $ "Score value is " ++ (show score)
 
 updateScore :: Play -> Play -> StateT GameState IO ()
-updateScore (handPlayer, betPlayer) (handAI, betAI) = do
-  let addPoint bet = (+)  (if bet == (handAI + handPlayer) then 1 else 0)
-  let _updateScore = Bi.first $ \(ai, player) -> (addPoint betPlayer player, addPoint betAI ai)
-  modify' _updateScore
+updateScore (Hand handP, Bet betP) (Hand handAI, Bet betAI) = do
+  let addPoint bet (SScore _ val) = val + (if bet == (handAI + handP) then 1 else 0)
+  let _updatedScore = Bi.first $ Bi.bimap (addPoint betP) (addPoint betAI)
+  modify' _updatedScore
 
 runRound :: StateT GameState IO ()
 runRound = do
@@ -65,7 +71,7 @@ runRound = do
 evalGame :: StateT GameState IO (Maybe Player)
 evalGame = do
   (score, _) <- get
-  let f = (flip (>=) $ 3)
+  let f (SScore _ n) = (flip (>=) $ 3) n
   lift $ case Bi.bimap f f score of
     (True, _) -> return $ Just Human
     (_, True) -> return $ Just AI
@@ -91,7 +97,7 @@ app = do
 
 main :: IO ()
 main = do
-  let state = ((0, 0), aiPlay)
+  let state = ((SScore Human 0, SScore AI 0), aiPlay)
   runStateT app state
   putStrLn ""
   putStrLn "GG!"
