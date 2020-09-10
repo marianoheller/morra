@@ -4,8 +4,8 @@
 
 module Main where
 
-import Control.Monad.IO.Class
-import Control.Monad.Trans.Class
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Control.Monad.Trans.Class (MonadTrans (lift))
 import Control.Monad.Trans.State.Lazy (StateT, get, modify', runStateT)
 import qualified Data.Bifunctor as Bi
 import System.Random (Random (randomRIO))
@@ -26,16 +26,24 @@ type Round = (Play Human, Play AI)
 
 type GameState = (Score, [Round])
 
-calcExpectedHand :: [Round] -> IO Integer
-calcExpectedHand [] = randomRIO (0, 5)
-calcExpectedHand ((Play a, _) : xs) = do
-  let (Hand h1, Bet _) = a
-  return h1
+calcExpectedHand :: [Round] -> Maybe Integer
+calcExpectedHand [] = Nothing
+calcExpectedHand rounds = return $ go rounds 0 0
+  where
+    go [] acc n = acc `div` n
+    go _ acc 3 = acc `div` 3
+    go ((Play a, _) : xs) acc n = go xs (acc + h1) (n + 1)
+      where
+        (Hand h1, Bet _) = a
 
 aiPlay :: StateT GameState IO (Play AI)
 aiPlay = do
   (_, a) <- get
-  expected <- liftIO $ calcExpectedHand a
+  let calced = calcExpectedHand a
+  expected <-
+    case calced of
+      Nothing -> liftIO $ randomRIO (0, 5)
+      Just a -> return a
   hand <- liftIO $ randomRIO (0, 5)
   let bet = hand + expected
   return $ Play (Hand hand, Bet bet)
