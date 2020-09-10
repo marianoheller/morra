@@ -26,10 +26,18 @@ type Round = (Play Human, Play AI)
 
 type GameState = (Score, [Round])
 
-aiPlay :: IO (Play AI)
+calcExpectedHand :: [Round] -> IO Integer
+calcExpectedHand [] = randomRIO (0, 5)
+calcExpectedHand ((Play a, _) : xs) = do
+  let (Hand h1, Bet _) = a
+  return h1
+
+aiPlay :: StateT GameState IO (Play AI)
 aiPlay = do
-  hand <- randomRIO (0, 5)
-  bet <- randomRIO (0, 10)
+  (_, a) <- get
+  expected <- liftIO $ calcExpectedHand a
+  hand <- liftIO $ randomRIO (0, 5)
+  let bet = hand + expected
   return $ Play (Hand hand, Bet bet)
 
 playerPlay :: IO (Play Human)
@@ -58,18 +66,20 @@ reportPlay (Play (Hand handPlayer, Bet betPlayer), Play (Hand handAI, Bet betAI)
   print $ "Full round value is " ++ (show $ handAI + handPlayer)
   print $ "Score value is " ++ (show score)
 
-updateScore :: Round -> StateT GameState IO ()
-updateScore (Play (Hand handP, Bet betP), Play (Hand handAI, Bet betAI)) = do
+updateState :: Round -> StateT GameState IO ()
+updateState r@(Play (Hand handP, Bet betP), Play (Hand handAI, Bet betAI)) = do
   let addPoint bet = fmap $ (+) (if bet == (handAI + handP) then 1 else 0)
-  let _updateScore = Bi.first $ Bi.bimap (addPoint betP) (addPoint betAI)
-  modify' _updateScore
+  let updateScore = Bi.bimap (addPoint betP) (addPoint betAI)
+  let updateRounds rounds = r : rounds
+  let updateInternalState = Bi.bimap updateScore updateRounds
+  modify' updateInternalState
 
 runRound :: StateT GameState IO ()
 runRound = do
   liftIO $ putStrLn "=========================="
-  computerChoice <- liftIO aiPlay
+  computerChoice <- aiPlay
   playerChoice <- liftIO playerPlay
-  updateScore (playerChoice, computerChoice)
+  updateState (playerChoice, computerChoice)
   reportPlay (playerChoice, computerChoice)
 
 evalGame :: StateT GameState IO (Maybe Player)
